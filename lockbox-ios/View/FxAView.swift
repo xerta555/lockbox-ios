@@ -35,12 +35,6 @@ class FxAView: UIViewController, FxAViewProtocol, WKNavigationDelegate {
         self.webView.load(urlRequest)
     }
 
-    func webView(_ webView: WKWebView,
-                 decidePolicyFor navigationAction: WKNavigationAction,
-                 decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-        presenter?.webViewRequest(decidePolicyFor: navigationAction, decisionHandler: decisionHandler)
-    }
-
     private func styleNavigationBar() {
         self.navigationItem.leftBarButtonItem = UIBarButtonItem(
                 title: Constant.string.cancel,
