@@ -12,6 +12,7 @@ class FxAView: UIViewController, FxAViewProtocol, WKNavigationDelegate {
     internal var presenter: FxAPresenter?
     private var webView: WKWebView
     private var disposeBag = DisposeBag()
+    private var url: URL?
 
     override var preferredStatusBarStyle: UIStatusBarStyle {
         return UIStatusBarStyle.lightContent
@@ -28,7 +29,7 @@ class FxAView: UIViewController, FxAViewProtocol, WKNavigationDelegate {
         self.configureWebView()
         self.webView.navigationDelegate = self
         self.view = self.webView
-        self.styleNavigationBar()
+        self.setupNavBar()
 
         self.presenter?.onViewReady()
     }
@@ -37,32 +38,14 @@ class FxAView: UIViewController, FxAViewProtocol, WKNavigationDelegate {
         self.webView.load(urlRequest)
     }
 
-    private func styleNavigationBar() {
-        self.navigationItem.leftBarButtonItem = UIBarButtonItem(
-                title: Constant.string.cancel,
-                style: .plain,
-                target: nil,
-                action: nil
-        )
-
-        self.navigationItem.leftBarButtonItem!.setTitleTextAttributes([
-            NSAttributedStringKey.foregroundColor: UIColor.white,
-            NSAttributedStringKey.font: UIFont.systemFont(ofSize: 18)
-        ], for: .normal)
-
-        if #available(iOS 11.0, *) {
-            self.navigationItem.largeTitleDisplayMode = .never
-        }
-
-        if let presenter = self.presenter {
-            self.navigationItem.leftBarButtonItem!.rx.tap
-                    .bind(to: presenter.onCancel)
-                    .disposed(by: self.disposeBag)
-        }
-    }
-
     required init?(coder aDecoder: NSCoder) {
         fatalError("not implemented")
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        if self.url == nil {
+            self.url = webView.url
+        }
     }
 }
 
@@ -101,11 +84,14 @@ extension FxAView: WKScriptMessageHandler {
         // message is the same as the origin of the URL we initially loaded in this web view.
         // Note that this exploit wouldn't be possible if we were using WebChannels; see
         // https://developer.mozilla.org/en-US/docs/Mozilla/JavaScript_code_modules/WebChannel.jsm
-        //   let origin = message.frameInfo.securityOrigin
-        //   guard origin.`protocol` == url.scheme && origin.host == url.host && origin.port == (url.port ?? 0) else {
-        //   print("Ignoring message - \(origin) does not match expected origin \(url.origin)")
-        //   return
-        //  }
+        let origin = message.frameInfo.securityOrigin
+        guard let url = self.url,
+              origin.`protocol` == url.scheme,
+              origin.host == url.host,
+              origin.port == (url.port ?? 0) else {
+            print("Ignoring message - \(origin) does not match expected origin \(self.url?.origin)")
+            return
+        }
 
         if message.name == "accountsCommandHandler" {
             let body = JSON(message.body)
@@ -172,5 +158,30 @@ class LeakAvoider: NSObject, WKScriptMessageHandler {
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         self.delegate?.userContentController(userContentController, didReceive: message)
+    }
+}
+
+extension FxAView: UIGestureRecognizerDelegate {
+    fileprivate func setupNavBar() {
+        let leftButton = UIButton(title: Constant.string.close, imageName: nil)
+        self.navigationItem.leftBarButtonItem = UIBarButtonItem(customView: leftButton)
+
+        if #available(iOS 11.0, *) {
+            self.navigationItem.largeTitleDisplayMode = .never
+        }
+
+        if let presenter = self.presenter {
+            leftButton.rx.tap
+                .bind(to: presenter.onClose)
+                .disposed(by: self.disposeBag)
+
+            self.navigationController?.interactivePopGestureRecognizer?.delegate = self
+            self.navigationController?.interactivePopGestureRecognizer?.rx.event
+                .map { _ -> Void in
+                    return ()
+                }
+                .bind(to: presenter.onClose)
+                .disposed(by: self.disposeBag)
+        }
     }
 }
